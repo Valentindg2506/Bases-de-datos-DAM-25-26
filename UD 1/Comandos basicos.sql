@@ -22,3 +22,5 @@ WHERE nombre = "Valentin";
 
 DELETE FROM clientes
 WHERE dni = "11111111A";
+
+	
