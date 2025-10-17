@@ -1,544 +1,425 @@
 #!/usr/bin/env python3
-# Agenda de Clientes (SQLite, Identificador) – GUI completa con menús, diálogos modales y tabla interactiva
-
-import sqlite3
+import sys
 import re
 import csv
 import webbrowser
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
 
-DB_PATH = "empresa.db"
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QTableView, QToolBar, QMessageBox,
+    QLineEdit, QLabel, QComboBox, QWidget, QHBoxLayout, QVBoxLayout,
+    QDialog, QFormLayout, QDialogButtonBox, QFileDialog, QStyle
+)
+from PySide6.QtGui import QAction, QIcon, QKeySequence
+from PySide6.QtCore import Qt, QSortFilterProxyModel, QRegularExpression
+from PySide6.QtSql import QSqlDatabase, QSqlTableModel, QSqlQuery
 
-DDL_CLIENTES = """
-CREATE TABLE IF NOT EXISTS clientes (
-    Identificador INTEGER PRIMARY KEY,
-    nombre TEXT NOT NULL,
-    apellidos TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE
-);
-"""
+EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+DB_NAME = "empresa.db"
 
-# -------------------- Utilidades DB --------------------
-def conectar():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+class ClienteDialog(QDialog):
+    def __init__(self, parent=None, record=None, modo="Nuevo"):
+        super().__init__(parent)
+        self.setWindowTitle(f"{modo} cliente")
+        self.record = record
+        self._build_ui(modo)
 
-def init_db(con):
-    with con:
-        con.execute(DDL_CLIENTES)
+    def _build_ui(self, modo):
+        layout = QFormLayout(self)
 
-def validar_email(email: str) -> bool:
-    return bool(EMAIL_RE.match((email or "").strip()))
+        self.ent_nombre = QLineEdit()
+        self.ent_apellidos = QLineEdit()
+        self.ent_email = QLineEdit()
 
-# -------------------- Diálogos modales --------------------
-class ClienteDialog(tk.Toplevel):
-    # Modo: "nuevo", "editar", "duplicar"
-    def __init__(self, master, title="Cliente", datos=None, modo="nuevo"):
-        super().__init__(master)
-        self.title(title)
-        self.transient(master)
-        self.resizable(False, False)
-        self.result = None
+        if self.record:
+            self.ent_nombre.setText(self.record.value("nombre"))
+            self.ent_apellidos.setText(self.record.value("apellidos"))
+            email_val = self.record.value("email") or ""
+            if modo == "Duplicar" and email_val:
+                at = email_val.find("@")
+                email_val = (email_val[:at] + "+copy" + email_val[at:]) if at != -1 else email_val + ".copy"
+            self.ent_email.setText(email_val)
 
-        frm = ttk.Frame(self, padding=14)
-        frm.grid(row=0, column=0, sticky="nsew")
-        frm.grid_columnconfigure(1, weight=1)
+        layout.addRow("Nombre:", self.ent_nombre)
+        layout.addRow("Apellidos:", self.ent_apellidos)
+        layout.addRow("Email:", self.ent_email)
 
-        ttk.Label(frm, text="Nombre:").grid(row=0, column=0, sticky="w", padx=(0,8), pady=6)
-        self.ent_nombre = ttk.Entry(frm, width=32)
-        self.ent_nombre.grid(row=0, column=1, sticky="ew", pady=6)
+        btns = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addRow(btns)
 
-        ttk.Label(frm, text="Apellidos:").grid(row=1, column=0, sticky="w", padx=(0,8), pady=6)
-        self.ent_apellidos = ttk.Entry(frm, width=32)
-        self.ent_apellidos.grid(row=1, column=1, sticky="ew", pady=6)
+    def get_data(self):
+        return {
+            "nombre": self.ent_nombre.text().strip(),
+            "apellidos": self.ent_apellidos.text().strip(),
+            "email": self.ent_email.text().strip(),
+        }
 
-        ttk.Label(frm, text="Email:").grid(row=2, column=0, sticky="w", padx=(0,8), pady=6)
-        self.ent_email = ttk.Entry(frm, width=32)
-        self.ent_email.grid(row=2, column=1, sticky="ew", pady=6)
+    def validate(self):
+        data = self.get_data()
+        if not data["nombre"] or not data["apellidos"] or not data["email"]:
+            QMessageBox.warning(self, "Validación", "Todos los campos son obligatorios.")
+            return False
+        if not EMAIL_REGEX.match(data["email"]):
+            QMessageBox.warning(self, "Validación", "Email no válido.")
+            return False
+        return True
 
-        # Botones
-        btns = ttk.Frame(frm)
-        btns.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10,0))
-        btns.grid_columnconfigure(0, weight=1)
-        btns.grid_columnconfigure(1, weight=1)
-        ttk.Button(btns, text="Cancelar", command=self._cancelar).grid(row=0, column=0, sticky="ew", padx=(0,6))
-        ttk.Button(btns, text="Guardar", command=self._guardar).grid(row=0, column=1, sticky="ew", padx=(6,0))
+    def accept(self):
+        if self.validate():
+            super().accept()
 
-        # Prefill
-        if datos:
-            self.ent_nombre.insert(0, datos.get("nombre",""))
-            self.ent_apellidos.insert(0, datos.get("apellidos",""))
-            email_prefill = datos.get("email","")
-            if modo == "duplicar" and email_prefill:
-                # Sugerir modificar email para respetar UNIQUE
-                at = email_prefill.find("@")
-                email_prefill = (email_prefill[:at] + "+copy" + email_prefill[at:]) if at != -1 else email_prefill + ".copy"
-            self.ent_email.insert(0, email_prefill)
-
-        self.bind("<Return>", lambda e: self._guardar())
-        self.bind("<Escape>", lambda e: self._cancelar())
-
-        self.protocol("WM_DELETE_WINDOW", self._cancelar)
-        self.grab_set()
-        self.ent_nombre.focus_set()
-
-    def _guardar(self):
-        nombre = self.ent_nombre.get().strip()
-        apellidos = self.ent_apellidos.get().strip()
-        email = self.ent_email.get().strip()
-        if not nombre or not apellidos or not email:
-            messagebox.showerror("Error", "Todos los campos son obligatorios.")
-            return
-        if not validar_email(email):
-            messagebox.showerror("Error", "Email no válido.")
-            return
-        self.result = {"nombre": nombre, "apellidos": apellidos, "email": email}
-        self.destroy()
-
-    def _cancelar(self):
-        self.result = None
-        self.destroy()
-
-class ImportDialog(tk.Toplevel):
-    # Importar CSV simple: columnas Nombre,Apellidos,Email (cabecera opcional)
-    def __init__(self, master):
-        super().__init__(master)
-        self.title("Importar desde CSV")
-        self.transient(master)
-        self.resizable(False, False)
-        self.result = None
-
-        frm = ttk.Frame(self, padding=14)
-        frm.grid(row=0, column=0, sticky="nsew")
-        frm.grid_columnconfigure(1, weight=1)
-
-        ttk.Label(frm, text="Archivo CSV:").grid(row=0, column=0, sticky="w", padx=(0,8), pady=6)
-        self.ent_path = ttk.Entry(frm, width=40)
-        self.ent_path.grid(row=0, column=1, sticky="ew", pady=6)
-        ttk.Button(frm, text="Explorar…", command=self._browse).grid(row=0, column=2, padx=(6,0))
-
-        self.has_header = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frm, text="Primera fila es cabecera", variable=self.has_header).grid(row=1, column=1, sticky="w", pady=(0,8))
-
-        btns = ttk.Frame(frm)
-        btns.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(10,0))
-        btns.grid_columnconfigure(0, weight=1)
-        btns.grid_columnconfigure(1, weight=1)
-        ttk.Button(btns, text="Cancelar", command=self._cancelar).grid(row=0, column=0, sticky="ew", padx=(0,6))
-        ttk.Button(btns, text="Importar", command=self._importar).grid(row=0, column=1, sticky="ew", padx=(6,0))
-
-        self.bind("<Return>", lambda e: self._importar())
-        self.bind("<Escape>", lambda e: self._cancelar())
-        self.protocol("WM_DELETE_WINDOW", self._cancelar)
-        self.grab_set()
-
-    def _browse(self):
-        path = filedialog.askopenfilename(title="Selecciona CSV", filetypes=[("CSV","*.csv"),("Todos","*.*")])
-        if path:
-            self.ent_path.delete(0, tk.END)
-            self.ent_path.insert(0, path)
-
-    def _importar(self):
-        path = self.ent_path.get().strip()
-        if not path:
-            messagebox.showwarning("Aviso", "Selecciona un archivo CSV.")
-            return
-        self.result = {"path": path, "has_header": self.has_header.get()}
-        self.destroy()
-
-    def _cancelar(self):
-        self.result = None
-        self.destroy()
-
-# -------------------- Aplicación principal --------------------
-class App(tk.Tk):
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.title("Agenda de Clientes • SQLite (Identificador)")
-        self.geometry("1180x680")
-        self.minsize(960, 560)
+        self.setWindowTitle("Agenda de Clientes • PySide6 (claro)")
+        self.resize(1024, 600)
 
-        # Estado
-        self.con = conectar()
-        init_db(self.con)
-        self.sort_col = "Identificador"
-        self.sort_desc = False
-        self.filter_text = tk.StringVar(value="")
-        self.filter_field = tk.StringVar(value="todos")
+        self._create_connection()
+        self._create_model()
+        self._create_proxy()
+        self._build_ui()
+        self._create_actions()
+        self._create_menus()
+        self._create_toolbar()
+        self._connect_signals()
+        self._status("Listo")
 
-        # UI
-        self._build_menubar()
-        self._build_toolbar()
-        self._build_main()
-        self._build_status()
-        self._bind_shortcuts()
+    # ---------- DB / Modelo ----------
+    def _create_connection(self):
+        self.db = QSqlDatabase.addDatabase("QSQLITE")
+        self.db.setDatabaseName(DB_NAME)
+        if not self.db.open():
+            QMessageBox.critical(self, "DB", "No se pudo abrir la base de datos.")
+            sys.exit(1)
+        q = QSqlQuery(self.db)
+        ok = q.exec(
+            """
+            CREATE TABLE IF NOT EXISTS clientes (
+                Identificador INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                apellidos TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE
+            )
+            """
+        )
+        if not ok:
+            QMessageBox.critical(self, "DB", f"Error creando tabla: {q.lastError().text()}")
+            sys.exit(1)
 
-        # Carga inicial
-        self._load_data()
+    def _create_model(self):
+        self.model = QSqlTableModel(self, self.db)
+        self.model.setTable("clientes")
+        self.model.setEditStrategy(QSqlTableModel.OnManualSubmit)
+        self.model.select()
+        self.model.setHeaderData(self.model.fieldIndex("Identificador"), Qt.Horizontal, "ID")
+        self.model.setHeaderData(self.model.fieldIndex("nombre"), Qt.Horizontal, "Nombre")
+        self.model.setHeaderData(self.model.fieldIndex("apellidos"), Qt.Horizontal, "Apellidos")
+        self.model.setHeaderData(self.model.fieldIndex("email"), Qt.Horizontal, "Email")
+
+    def _create_proxy(self):
+        self.proxy = QSortFilterProxyModel(self)
+        self.proxy.setSourceModel(self.model)
+        self.proxy.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.proxy.setFilterKeyColumn(-1)
 
     # ---------- UI ----------
-    def _build_menubar(self):
-        menubar = tk.Menu(self)
+    def _build_ui(self):
+        # Filtro superior
+        self.edit_filter = QLineEdit()
+        self.combo_field = QComboBox()
+        self.combo_field.addItems(["Todos", "Nombre", "Apellidos", "Email"])
 
-        m_file = tk.Menu(menubar, tearoff=False)
-        m_file.add_command(label="Nuevo… (Ctrl+N)", command=self.cmd_nuevo)
-        m_file.add_command(label="Editar… (Ctrl+E)", command=self.cmd_editar)
-        m_file.add_command(label="Duplicar… (Ctrl+D)", command=self.cmd_duplicar)
-        m_file.add_separator()
-        m_file.add_command(label="Eliminar (Supr)", command=self.cmd_eliminar)
-        m_file.add_separator()
-        m_file.add_command(label="Importar CSV…", command=self.cmd_importar)
-        m_file.add_command(label="Exportar CSV…", command=self.cmd_exportar)
-        m_file.add_separator()
-        m_file.add_command(label="Salir", command=self.destroy)
-        menubar.add_cascade(label="Archivo", menu=m_file)
+        filter_bar = QHBoxLayout()
+        filter_bar.addWidget(QLabel("Buscar:"))
+        filter_bar.addWidget(self.edit_filter)
+        filter_bar.addWidget(self.combo_field)
 
-        m_view = tk.Menu(menubar, tearoff=False)
-        m_view.add_command(label="Refrescar (F5)", command=self._load_data)
-        m_view.add_checkbutton(label="Mostrar búsqueda (Ctrl+F)", command=self._toggle_busqueda)
-        menubar.add_cascade(label="Ver", menu=m_view)
+        # Tabla
+        self.view = QTableView()
+        self.view.setModel(self.proxy)
+        self.view.setSelectionBehavior(QTableView.SelectRows)
+        self.view.setSelectionMode(QTableView.SingleSelection)
+        self.view.setSortingEnabled(True)
+        self.view.sortByColumn(self.model.fieldIndex("Identificador"), Qt.AscendingOrder)
+        self.view.setAlternatingRowColors(True)
+        self.view.setEditTriggers(QTableView.NoEditTriggers)
 
-        m_help = tk.Menu(menubar, tearoff=False)
-        m_help.add_command(label="Acerca de", command=lambda: messagebox.showinfo(
-            "Acerca de",
-            "Agenda de Clientes con Tkinter y SQLite\nCRUD completo con menús, diálogos modales y tabla interactiva."
-        ))
-        menubar.add_cascade(label="Ayuda", menu=m_help)
+        layout = QVBoxLayout()
+        layout.addLayout(filter_bar)
+        layout.addWidget(self.view)
 
-        self.config(menu=menubar)
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
 
-    def _build_toolbar(self):
-        tb = ttk.Frame(self, padding=(8,6))
-        tb.grid(row=0, column=0, sticky="ew")
-        for c in range(10):
-            tb.grid_columnconfigure(c, weight=0)
-        tb.grid_columnconfigure(10, weight=1)
+        # Estilo claro simple sin manipular QPalette avanzado (evita errores en Qt 6)
+        self.setStyleSheet("""
+            QTableView { gridline-color: #cccccc; }
+            QHeaderView::section { background: #f5f5f5; padding: 6px; border: 1px solid #dddddd; }
+            QLineEdit { padding: 4px; }
+        """)
 
-        ttk.Button(tb, text="Nuevo…", command=self.cmd_nuevo).grid(row=0, column=0, padx=(0,6))
-        ttk.Button(tb, text="Editar…", command=self.cmd_editar).grid(row=0, column=1, padx=6)
-        ttk.Button(tb, text="Duplicar…", command=self.cmd_duplicar).grid(row=0, column=2, padx=6)
-        ttk.Button(tb, text="Eliminar", command=self.cmd_eliminar).grid(row=0, column=3, padx=6)
-        ttk.Separator(tb, orient="vertical").grid(row=0, column=4, padx=8, sticky="ns")
-        ttk.Button(tb, text="Importar CSV…", command=self.cmd_importar).grid(row=0, column=5, padx=6)
-        ttk.Button(tb, text="Exportar CSV…", command=self.cmd_exportar).grid(row=0, column=6, padx=6)
-        ttk.Separator(tb, orient="vertical").grid(row=0, column=7, padx=8, sticky="ns")
+    # ---------- Acciones / Menús / Toolbar ----------
+    def _create_actions(self):
+        style = self.style()
 
-        # Búsqueda avanzada
-        self.search_frame = ttk.Frame(tb)
-        self.search_frame.grid(row=0, column=8, sticky="e", padx=(12,0))
-        ttk.Label(self.search_frame, text="Buscar:").grid(row=0, column=0, padx=(0,6))
-        self.ent_search = ttk.Entry(self.search_frame, textvariable=self.filter_text, width=24)
-        self.ent_search.grid(row=0, column=1)
-        ttk.Label(self.search_frame, text="en").grid(row=0, column=2, padx=6)
-        self.cmb_field = ttk.Combobox(self.search_frame, state="readonly", width=12,
-                                      values=["todos","Nombre","Apellidos","Email"])
-        self.cmb_field.current(0)
-        self.cmb_field.bind("<<ComboboxSelected>>", lambda e: self._apply_field())
-        self.cmb_field.grid(row=0, column=3)
-        ttk.Button(self.search_frame, text="Aplicar", command=self._load_data).grid(row=0, column=4, padx=(6,0))
-        self.ent_search.bind("<Return>", lambda e: self._load_data())
+        self.act_new = QAction(style.standardIcon(QStyle.SP_FileIcon), "Nuevo", self)
+        self.act_new.setShortcut(QKeySequence("Ctrl+N"))
 
-    def _build_main(self):
-        main = ttk.Frame(self, padding=8)
-        main.grid(row=1, column=0, sticky="nsew")
-        self.grid_rowconfigure(1, weight=1)
-        self.grid_columnconfigure(0, weight=1)
+        self.act_edit = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Editar", self)
+        self.act_edit.setShortcut(QKeySequence("Ctrl+E"))
 
-        columns = ("Identificador", "Nombre", "Apellidos", "Email")
-        self.tree = ttk.Treeview(main, columns=columns, show="headings", selectmode="browse")
-        vsb = ttk.Scrollbar(main, orient="vertical", command=self.tree.yview)
-        hsb = ttk.Scrollbar(main, orient="horizontal", command=self.tree.xview)
-        self.tree.configure(yscroll=vsb.set, xscroll=hsb.set)
+        self.act_dup = QAction(style.standardIcon(QStyle.SP_ArrowRight), "Duplicar", self)
+        self.act_dup.setShortcut(QKeySequence("Ctrl+D"))
 
-        # Encabezados con callback de ordenación
-        self.tree.heading("Identificador", text="Identificador", command=lambda: self._sort_by("Identificador"))
-        self.tree.heading("Nombre", text="Nombre", command=lambda: self._sort_by("nombre"))
-        self.tree.heading("Apellidos", text="Apellidos", command=lambda: self._sort_by("apellidos"))
-        self.tree.heading("Email", text="Email", command=lambda: self._sort_by("email"))
+        self.act_del = QAction(style.standardIcon(QStyle.SP_TrashIcon), "Eliminar", self)
+        self.act_del.setShortcut(QKeySequence("Delete"))
 
-        self.tree.column("Identificador", width=140, anchor="w", stretch=False)
-        self.tree.column("Nombre", width=240, anchor="w", stretch=True)
-        self.tree.column("Apellidos", width=280, anchor="w", stretch=True)
-        self.tree.column("Email", width=380, anchor="w", stretch=True)
+        self.act_imp = QAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Importar CSV", self)
 
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
-        hsb.grid(row=1, column=0, sticky="ew")
-        main.grid_rowconfigure(0, weight=1)
-        main.grid_columnconfigure(0, weight=1)
+        self.act_exp = QAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Exportar CSV", self)
 
-        # Menú contextual
-        self.ctx = tk.Menu(self, tearoff=False)
-        self.ctx.add_command(label="Editar…", command=self.cmd_editar)
-        self.ctx.add_command(label="Duplicar…", command=self.cmd_duplicar)
-        self.ctx.add_command(label="Eliminar", command=self.cmd_eliminar)
-        self.ctx.add_separator()
-        self.ctx.add_command(label="Copiar email", command=self.cmd_copiar_email)
-        self.ctx.add_command(label="Abrir correo", command=self.cmd_abrir_correo)
+        self.act_copy = QAction(style.standardIcon(QStyle.SP_DialogYesButton), "Copiar email", self)
+        self.act_open = QAction(style.standardIcon(QStyle.SP_DesktopIcon), "Abrir correo", self)
 
-        self.tree.bind("<Button-3>", self._popup_ctx)
-        self.tree.bind("<Double-1>", lambda e: self.cmd_editar())
+        self.act_exit = QAction("Salir", self)
+        self.act_exit.setShortcut(QKeySequence("Ctrl+Q"))
 
-    def _build_status(self):
-        status = ttk.Frame(self)
-        status.grid(row=2, column=0, sticky="ew")
-        status.grid_columnconfigure(0, weight=1)
-        self.status_label = ttk.Label(status, text="Listo", anchor="w")
-        self.status_label.grid(row=0, column=0, sticky="ew")
+        self.act_about = QAction("Acerca de", self)
+        self.act_about.setShortcut(QKeySequence("F1"))
 
-    def _bind_shortcuts(self):
-        self.bind("<Control-n>", lambda e: self.cmd_nuevo())
-        self.bind("<Control-N>", lambda e: self.cmd_nuevo())
-        self.bind("<Control-e>", lambda e: self.cmd_editar())
-        self.bind("<Control-E>", lambda e: self.cmd_editar())
-        self.bind("<Control-d>", lambda e: self.cmd_duplicar())
-        self.bind("<Control-D>", lambda e: self.cmd_duplicar())
-        self.bind("<Delete>",    lambda e: self.cmd_eliminar())
-        self.bind("<F5>",        lambda e: self._load_data())
-        self.bind("<Control-f>", lambda e: self._toggle_busqueda())
-        self.bind("<Control-F>", lambda e: self._toggle_busqueda())
+    def _create_menus(self):
+        mb = self.menuBar()
+        m_file = mb.addMenu("Archivo")
+        m_file.addAction(self.act_new)
+        m_file.addAction(self.act_edit)
+        m_file.addAction(self.act_dup)
+        m_file.addSeparator()
+        m_file.addAction(self.act_del)
+        m_file.addSeparator()
+        m_file.addAction(self.act_imp)
+        m_file.addAction(self.act_exp)
+        m_file.addSeparator()
+        m_file.addAction(self.act_exit)
 
-    # ---------- Helpers ----------
-    def _set_status(self, text):
-        self.status_label.configure(text=text)
+        m_edit = mb.addMenu("Editar")
+        m_edit.addAction(self.act_copy)
+        m_edit.addAction(self.act_open)
 
-    def _selected_row(self):
-        sel = self.tree.selection()
-        if not sel:
+        m_help = mb.addMenu("Ayuda")
+        m_help.addAction(self.act_about)
+
+    def _create_toolbar(self):
+        tb = QToolBar("Acciones")
+        self.addToolBar(tb)
+        tb.addAction(self.act_new)
+        tb.addAction(self.act_edit)
+        tb.addAction(self.act_dup)
+        tb.addAction(self.act_del)
+        tb.addSeparator()
+        tb.addAction(self.act_imp)
+        tb.addAction(self.act_exp)
+        tb.addSeparator()
+        tb.addAction(self.act_copy)
+        tb.addAction(self.act_open)
+
+    def _connect_signals(self):
+        # Acciones
+        self.act_new.triggered.connect(self.cmd_new)
+        self.act_edit.triggered.connect(self.cmd_edit)
+        self.act_dup.triggered.connect(self.cmd_dup)
+        self.act_del.triggered.connect(self.cmd_del)
+        self.act_imp.triggered.connect(self.cmd_import_csv)
+        self.act_exp.triggered.connect(self.cmd_export_csv)
+        self.act_copy.triggered.connect(self.cmd_copy_email)
+        self.act_open.triggered.connect(self.cmd_open_email)
+        self.act_exit.triggered.connect(self.close)
+        self.act_about.triggered.connect(lambda: QMessageBox.information(self, "Acerca de", "Agenda de Clientes (PySide6) – Interfaz clara y moderna."))
+
+        # Filtro
+        self.edit_filter.textChanged.connect(self._apply_filter)
+        self.combo_field.currentIndexChanged.connect(self._apply_filter)
+
+        # Interacción tabla
+        self.view.doubleClicked.connect(lambda: self.cmd_edit())
+
+    # ---------- Utilidades ----------
+    def _status(self, msg):
+        self.statusBar().showMessage(msg, 4000)
+
+    def _selected_source_row(self):
+        idx = self.view.currentIndex()
+        if not idx.isValid():
             return None
-        v = self.tree.item(sel[0], "values")
-        return {"Identificador": int(v[0]), "nombre": v[1], "apellidos": v[2], "email": v[3]}
+        return self.proxy.mapToSource(idx).row()
 
-    def _popup_ctx(self, event):
-        try:
-            row_id = self.tree.identify_row(event.y)
-            if row_id:
-                self.tree.selection_set(row_id)
-            self.ctx.tk_popup(event.x_root, event.y_root)
-        finally:
-            self.ctx.grab_release()
-
-    def _toggle_busqueda(self):
-        if self.search_frame.winfo_ismapped():
-            self.search_frame.grid_remove()
+    def _apply_filter(self):
+        text = self.edit_filter.text()
+        column = self.combo_field.currentText()
+        regex = QRegularExpression(QRegularExpression.escape(text), QRegularExpression.CaseInsensitiveOption)
+        if column == "Todos":
+            self.proxy.setFilterKeyColumn(-1)
         else:
-            self.search_frame.grid()
-            self.ent_search.focus_set()
-
-    def _apply_field(self):
-        self.filter_field.set(self.cmb_field.get())
-        self._load_data()
-
-    # ---------- Datos / Orden ----------
-    def _load_data(self):
-        # Col mapa seguro
-        allowed = {"Identificador":"Identificador","nombre":"nombre","apellidos":"apellidos","email":"email"}
-        order_col = allowed.get(self.sort_col, "Identificador")
-        order_dir = "DESC" if self.sort_desc else "ASC"
-
-        filtro = self.filter_text.get().strip()
-        campo = self.filter_field.get()
-        params = ()
-        where = ""
-        if filtro:
-            like = f"%{filtro}%"
-            if campo == "Nombre":
-                where = "WHERE nombre LIKE ?"
-                params = (like,)
-            elif campo == "Apellidos":
-                where = "WHERE apellidos LIKE ?"
-                params = (like,)
-            elif campo == "Email":
-                where = "WHERE email LIKE ?"
-                params = (like,)
-            else:
-                where = "WHERE nombre LIKE ? OR apellidos LIKE ? OR email LIKE ?"
-                params = (like, like, like)
-
-        sql = f"""
-            SELECT Identificador, nombre, apellidos, email
-            FROM clientes
-            {where}
-            ORDER BY {order_col} {order_dir}
-        """
-        filas = self.con.execute(sql, params).fetchall()
-
-        # Poblar
-        for it in self.tree.get_children():
-            self.tree.delete(it)
-        for idx, r in enumerate(filas):
-            tag = "even" if idx % 2 == 0 else "odd"
-            self.tree.insert("", "end", values=(r["Identificador"], r["nombre"], r["apellidos"], r["email"]), tags=(tag,))
-
-        # Flechas en encabezados
-        self._update_headings_arrows()
-        self._set_status(f"{len(filas)} clientes")
-
-    def _update_headings_arrows(self):
-        up = " ▲"
-        down = " ▼"
-        heads = {
-            "Identificador": ("Identificador", "Identificador"),
-            "nombre": ("Nombre", "nombre"),
-            "apellidos": ("Apellidos", "apellidos"),
-            "email": ("Email", "email")
-        }
-        for heading, (label, colkey) in heads.items():
-            arrow = ""
-            if self.sort_col == colkey:
-                arrow = down if self.sort_desc else up
-            self.tree.heading(heading, text=label + arrow)
-
-    def _sort_by(self, col):
-        if self.sort_col == col:
-            self.sort_desc = not self.sort_desc
-        else:
-            self.sort_col = col
-            self.sort_desc = False
-        self._load_data()
+            field = column.lower()
+            self.proxy.setFilterKeyColumn(self.model.fieldIndex(field))
+        self.proxy.setFilterRegularExpression(regex)
 
     # ---------- Comandos ----------
-    def cmd_nuevo(self):
-        dlg = ClienteDialog(self, title="Nuevo cliente", modo="nuevo")
-        self.wait_window(dlg)  # modal
-        if dlg.result:
-            try:
-                with self.con:
-                    cur = self.con.execute(
-                        "INSERT INTO clientes (nombre, apellidos, email) VALUES (?, ?, ?)",
-                        (dlg.result["nombre"], dlg.result["apellidos"], dlg.result["email"])
-                    )
-                self._set_status(f"Cliente creado (ID {cur.lastrowid})")
-                self._load_data()
-            except sqlite3.IntegrityError as e:
-                messagebox.showerror("Integridad", f"No se pudo crear: {e}")
+    def cmd_new(self):
+        dlg = ClienteDialog(self, modo="Nuevo")
+        if dlg.exec():
+            data = dlg.get_data()
+            rec = self.model.record()
+            rec.setValue("nombre", data["nombre"])
+            rec.setValue("apellidos", data["apellidos"])
+            rec.setValue("email", data["email"])
+            if not self.model.insertRecord(-1, rec):
+                QMessageBox.critical(self, "Error", self.model.lastError().text())
+            else:
+                self.model.submitAll()
+                self.model.select()
+                self._status("Cliente creado.")
 
-    def cmd_editar(self):
-        row = self._selected_row()
-        if not row:
-            messagebox.showwarning("Aviso", "Selecciona un cliente primero.")
+    def cmd_edit(self):
+        row = self._selected_source_row()
+        if row is None:
+            QMessageBox.warning(self, "Editar", "Selecciona un registro primero.")
             return
-        dlg = ClienteDialog(self, title=f"Editar cliente [{row['Identificador']}]", datos=row, modo="editar")
-        self.wait_window(dlg)
-        if dlg.result:
-            try:
-                with self.con:
-                    cur = self.con.execute(
-                        "UPDATE clientes SET nombre = ?, apellidos = ?, email = ? WHERE Identificador = ?",
-                        (dlg.result["nombre"], dlg.result["apellidos"], dlg.result["email"], row["Identificador"])
-                    )
-                if cur.rowcount == 0:
-                    self._set_status("No se actualizó ningún registro")
-                else:
-                    self._set_status("Cliente actualizado")
-                self._load_data()
-            except sqlite3.IntegrityError as e:
-                messagebox.showerror("Integridad", f"No se pudo actualizar: {e}")
+        rec = self.model.record(row)
+        dlg = ClienteDialog(self, record=rec, modo="Editar")
+        if dlg.exec():
+            data = dlg.get_data()
+            self.model.setData(self.model.index(row, self.model.fieldIndex("nombre")), data["nombre"])
+            self.model.setData(self.model.index(row, self.model.fieldIndex("apellidos")), data["apellidos"])
+            self.model.setData(self.model.index(row, self.model.fieldIndex("email")), data["email"])
+            if not self.model.submitAll():
+                QMessageBox.critical(self, "Error", self.model.lastError().text())
+            else:
+                self.model.select()
+                self._status("Cliente actualizado.")
 
-    def cmd_duplicar(self):
-        row = self._selected_row()
-        if not row:
-            messagebox.showwarning("Aviso", "Selecciona un cliente primero.")
+    def cmd_dup(self):
+        row = self._selected_source_row()
+        if row is None:
+            QMessageBox.warning(self, "Duplicar", "Selecciona un registro primero.")
             return
-        dlg = ClienteDialog(self, title=f"Duplicar cliente [{row['Identificador']}]", datos=row, modo="duplicar")
-        self.wait_window(dlg)
-        if dlg.result:
-            try:
-                with self.con:
-                    cur = self.con.execute(
-                        "INSERT INTO clientes (nombre, apellidos, email) VALUES (?, ?, ?)",
-                        (dlg.result["nombre"], dlg.result["apellidos"], dlg.result["email"])
-                    )
-                self._set_status(f"Cliente duplicado (ID {cur.lastrowid})")
-                self._load_data()
-            except sqlite3.IntegrityError as e:
-                messagebox.showerror("Integridad", f"No se pudo duplicar: {e}")
+        rec = self.model.record(row)
+        dlg = ClienteDialog(self, record=rec, modo="Duplicar")
+        if dlg.exec():
+            data = dlg.get_data()
+            newrec = self.model.record()
+            newrec.setValue("nombre", data["nombre"])
+            newrec.setValue("apellidos", data["apellidos"])
+            newrec.setValue("email", data["email"])
+            if not self.model.insertRecord(-1, newrec):
+                QMessageBox.critical(self, "Error", self.model.lastError().text())
+            else:
+                self.model.submitAll()
+                self.model.select()
+                self._status("Cliente duplicado.")
 
-    def cmd_eliminar(self):
-        row = self._selected_row()
-        if not row:
-            messagebox.showwarning("Aviso", "Selecciona un cliente primero.")
+    def cmd_del(self):
+        row = self._selected_source_row()
+        if row is None:
+            QMessageBox.warning(self, "Eliminar", "Selecciona un registro primero.")
             return
-        if not messagebox.askyesno("Confirmar", f"¿Eliminar [{row['Identificador']}] {row['nombre']} {row['apellidos']}?"):
-            return
-        with self.con:
-            cur = self.con.execute("DELETE FROM clientes WHERE Identificador = ?", (row["Identificador"],))
-        if cur.rowcount == 0:
-            self._set_status("No se eliminó ningún registro")
-        else:
-            self._set_status("Cliente eliminado")
-        self._load_data()
+        rec = self.model.record(row)
+        if QMessageBox.question(self, "Eliminar",
+                                f"¿Eliminar '{rec.value('nombre')} {rec.value('apellidos')}'?") == QMessageBox.Yes:
+            if not self.model.removeRow(row):
+                QMessageBox.critical(self, "Error", self.model.lastError().text())
+            else:
+                if not self.model.submitAll():
+                    QMessageBox.critical(self, "Error", self.model.lastError().text())
+                self.model.select()
+                self._status("Cliente eliminado.")
 
-    def cmd_importar(self):
-        dlg = ImportDialog(self)
-        self.wait_window(dlg)
-        if not dlg.result:
+    def cmd_import_csv(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Importar CSV", "", "CSV (*.csv);;Todos (*)")
+        if not path:
             return
-        path = dlg.result["path"]
-        has_header = dlg.result["has_header"]
-        insertados = 0
-        duplicados = 0
+        inserted, dup = 0, 0
+        q = QSqlQuery(self.db)
+        q.prepare("INSERT INTO clientes (nombre, apellidos, email) VALUES (?, ?, ?)")
         try:
-            with open(path, newline="", encoding="utf-8") as f, self.con:
+            with open(path, newline="", encoding="utf-8") as f:
                 reader = csv.reader(f)
-                if has_header:
-                    next(reader, None)
+                # Detectar cabecera por contenido simple (si primera fila contiene 'nombre')
+                first = next(reader, None)
+                if first and any(h.lower() in ("nombre", "apellidos", "email") for h in first):
+                    pass  # ya consumida cabecera
+                else:
+                    if first:
+                        # no era cabecera, procesar como fila
+                        row = first
+                        if len(row) >= 3:
+                            q.addBindValue(row[0].strip())
+                            q.addBindValue(row[1].strip())
+                            q.addBindValue(row[2].strip())
+                            if q.exec():
+                                inserted += 1
+                            else:
+                                dup += 1
                 for row in reader:
                     if len(row) < 3:
                         continue
-                    nombre, apellidos, email = row[0].strip(), row[1].strip(), row[2].strip()
-                    if not (nombre and apellidos and validar_email(email)):
-                        continue
-                    try:
-                        self.con.execute(
-                            "INSERT INTO clientes (nombre, apellidos, email) VALUES (?, ?, ?)",
-                            (nombre, apellidos, email)
-                        )
-                        insertados += 1
-                    except sqlite3.IntegrityError:
-                        duplicados += 1
-            self._set_status(f"Importados: {insertados}, duplicados: {duplicados}")
-            self._load_data()
+                    q.addBindValue(row[0].strip())
+                    q.addBindValue(row[1].strip())
+                    q.addBindValue(row[2].strip())
+                    if q.exec():
+                        inserted += 1
+                    else:
+                        dup += 1
+            self.model.select()
+            QMessageBox.information(self, "Importación", f"Insertados: {inserted}\nDuplicados: {dup}")
+            self._status("Importación finalizada.")
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo importar: {e}")
+            QMessageBox.critical(self, "Error", f"No se pudo importar: {e}")
 
-    def cmd_exportar(self):
-        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV","*.csv")], title="Exportar a CSV")
+    def cmd_export_csv(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Exportar CSV", "clientes.csv", "CSV (*.csv);;Todos (*)")
         if not path:
             return
-        filas = self.con.execute("SELECT Identificador, nombre, apellidos, email FROM clientes ORDER BY Identificador").fetchall()
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
-                w.writerow(["Identificador","Nombre","Apellidos","Email"])
-                for r in filas:
-                    w.writerow([r["Identificador"], r["nombre"], r["apellidos"], r["email"]])
-            self._set_status(f"Exportado: {path}")
+                w.writerow(["Identificador", "Nombre", "Apellidos", "Email"])
+                for r in range(self.model.rowCount()):
+                    rec = self.model.record(r)
+                    w.writerow([
+                        rec.value("Identificador"),
+                        rec.value("nombre"),
+                        rec.value("apellidos"),
+                        rec.value("email"),
+                    ])
+            QMessageBox.information(self, "Exportar", f"Archivo guardado en: {path}")
+            self._status("Exportación finalizada.")
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo exportar: {e}")
+            QMessageBox.critical(self, "Error", f"No se pudo exportar: {e}")
 
-    def cmd_copiar_email(self):
-        row = self._selected_row()
-        if not row:
+    def cmd_copy_email(self):
+        row = self._selected_source_row()
+        if row is None:
             return
-        self.clipboard_clear()
-        self.clipboard_append(row["email"])
-        self._set_status(f"Email copiado: {row['email']}")
+        rec = self.model.record(row)
+        email = rec.value("email") or ""
+        QApplication.clipboard().setText(email)
+        self._status(f"Email copiado: {email}")
 
-    def cmd_abrir_correo(self):
-        row = self._selected_row()
-        if not row:
+    def cmd_open_email(self):
+        row = self._selected_source_row()
+        if row is None:
             return
-        try:
-            webbrowser.open(f"mailto:{row['email']}", new=1)
-            self._set_status(f"Abrir correo: {row['email']}")
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo abrir el cliente de correo: {e}")
+        rec = self.model.record(row)
+        email = rec.value("email") or ""
+        if email:
+            webbrowser.open(f"mailto:{email}")
+            self._status(f"Abrir correo: {email}")
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec())
 
