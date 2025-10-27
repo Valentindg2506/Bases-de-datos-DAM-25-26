@@ -20,11 +20,11 @@ CREATE TABLE clientes(
 	email VARCHAR(100)
 );
 # INSERTAR DATOS EN LA TABLA #
-INSERT INTO clientes VALUES(
-	"12345678A",
-	"Valentin",
-	"De Gennaro",
-	"valentindegennaro@gmail.com"
+INSERT INTO Cliente VALUES(
+	"12345678Z",
+	"Pepe",
+	"Gomez",
+	"pepe@gmail.com"
 );
 
 # MOSTRAMOS TODOS LOS DATOS DE LA TABLA #
