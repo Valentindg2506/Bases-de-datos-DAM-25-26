@@ -362,4 +362,48 @@ SELECT * FROM prestamos;
 +----+----------+----------+----------------+------------------+
 2 rows in set (0,00 sec)
 
+------------- VERIFICACION -------------------
+SHOW TABLES;
++------------------------+
+| Tables_in_biblioteca25 |
++------------------------+
+| autores                |
+| libros                 |
+| prestamos              |
+| socios                 |
++------------------------+
+4 rows in set (0,00 sec)
 
+DESCRIBE autores;
+mysql> DESCRIBE autores;
++--------+--------------+------+-----+---------+----------------+
+| Field  | Type         | Null | Key | Default | Extra          |
++--------+--------------+------+-----+---------+----------------+
+| id     | int          | NO   | PRI | NULL    | auto_increment |
+| nombre | varchar(50)  | YES  |     | NULL    |                |
+| pais   | varchar(255) | YES  |     | NULL    |                |
++--------+--------------+------+-----+---------+----------------+
+3 rows in set (0,00 sec)
+
+DESCRIBE libros;
++----------+--------------+------+-----+---------+----------------+
+| Field    | Type         | Null | Key | Default | Extra          |
++----------+--------------+------+-----+---------+----------------+
+| id       | int          | NO   | PRI | NULL    | auto_increment |
+| titulo   | varchar(200) | NO   | MUL | NULL    |                |
+| isbn     | varchar(20)  | NO   | UNI | NULL    |                |
+| precio   | decimal(8,2) | NO   |     | NULL    |                |
+| autor_id | int          | NO   | MUL | NULL    |                |
++----------+--------------+------+-----+---------+----------------+
+5 rows in set (0,00 sec)
+
+DESCRIBE socios;
++------------+--------------+------+-----+-----------+-------------------+
+| Field      | Type         | Null | Key | Default   | Extra             |
++------------+--------------+------+-----+-----------+-------------------+
+| id         | int          | NO   | PRI | NULL      | auto_increment    |
+| nombre     | varchar(100) | NO   |     | NULL      |                   |
+| email      | varchar(120) | NO   | UNI | NULL      |                   |
+| fecha_alta | date         | NO   |     | curdate() | DEFAULT_GENERATED |
++------------+--------------+------+-----+-----------+-------------------+
+4 rows in set (0,00 sec)
