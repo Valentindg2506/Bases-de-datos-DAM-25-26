@@ -224,10 +224,18 @@ SHOW INDEX FROM prestamos;
 -- Verificamos los checks --
 
 INSERT INTO prestamos VALUES(
-	'1',
-	'1',
-	'1',
-	'10/10/2025'
+	NULL,
+	1,
+	2,
+	'2025-10-31',
+	NULL
+);
+INSERT INTO prestamos VALUES(
+	NULL,
+	1,
+	2,
+	'2025-10-31',
+	'2025-11-25'
 );
 
 -- Insertamos datos --
@@ -342,6 +350,16 @@ INSERT INTO prestamos VALUES(
 	1,
 	2,
 	'2025-10-31',
-	'2025
+	'2025-11-25'
 );
+
+SELECT * FROM prestamos;
++----+----------+----------+----------------+------------------+
+| id | socio_id | libro_id | fecha_prestamo | fecha_devolucion |
++----+----------+----------+----------------+------------------+
+|  1 |        1 |        2 | 2025-10-31     | NULL             |
+|  2 |        1 |        2 | 2025-10-31     | 2025-11-25       |
++----+----------+----------+----------------+------------------+
+2 rows in set (0,00 sec)
+
 
