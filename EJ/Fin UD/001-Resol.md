@@ -1,4 +1,5 @@
 En este ejercicio vamos a crear una base de datos funcional para una biblioteca que le permita guardar los autores, los libros, los socios y los prestamos.
+---
 Para realizar este ejercicio primero debemos crear la base de datos:
 ```
 	CREATE DATABASE biblioteca25;
@@ -151,6 +152,7 @@ INSERT INTO prestamos VALUES(
 	NULL
 );
 ```
+---
 A continuación el registro de todo lo hecho en mysql:
 ```
 -- Entramos en mysql --
@@ -564,6 +566,7 @@ DESCRIBE socios;
 4 rows in set (0,00 sec)
 
 ```
+---
 **NOTAS:**
 - Es importante al final de cada comando en sql poner el *;*, ya que de lo contrario no va a funcionar.
 
