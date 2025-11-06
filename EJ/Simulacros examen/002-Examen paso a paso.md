@@ -1,3 +1,9 @@
+Vamos a crear una base de datos para una biblioteca que permite almacenar datos de autores y entradas.
+
+---
+
+Pasos para realizar este ejercicio:
+
 Iniciamos sesion en MySQL
 ```
 	sudo mysql -u root -p
@@ -138,4 +144,7 @@ FROM entradas
 LEFT JOIN autores
 ON entradas.id_autor = autores.Identificador;
 ```
+**NOTAS:**
+- Es importante recordar usar el `;` ya que de no hacerlo el comando no funciona.
+- El crear una vista es util ya que se pueden ver las dos tablas en una.
 
