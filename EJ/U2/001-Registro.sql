@@ -3,7 +3,7 @@ sudo mysql -u root -p
 CREATE DATABASE EJ;
 Query OK, 1 row affected (0,02 sec)
 
-SHOW DATABASE;
+SHOW DATABASES;
 +--------------------+
 | Database           |
 +--------------------+
