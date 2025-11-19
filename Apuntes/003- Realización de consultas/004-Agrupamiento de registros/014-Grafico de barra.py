@@ -11,7 +11,7 @@ conexion = mysql.connector.connect(
 cursor = conexion.cursor()  
 cursor.execute('''
 	SELECT
-	COUNT(categoria) AS numero,
+	COUNT(stock) AS numero,
 	color
 	FROM productos
 	GROUP BY color
@@ -25,6 +25,6 @@ for fila in filas:
 	etiquetas.append(fila[1])
 print(cantidades)
 print(etiquetas)
-pt.pie(cantidades,labels=etiquetas)
+pt.bar(cantidades,labels=etiquetas,height=30)
 pt.show()
 

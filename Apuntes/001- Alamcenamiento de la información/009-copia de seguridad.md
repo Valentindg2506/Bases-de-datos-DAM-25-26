@@ -2,6 +2,6 @@
 
 quit;
 
-sudo mysqldump -u valentin -p empresadam > copiadeseguridad.sql
+sudo mysqldump -u root -p clientes > copiadeseguridad.sql
 
 ls ## listamos contenido en pantalla ##

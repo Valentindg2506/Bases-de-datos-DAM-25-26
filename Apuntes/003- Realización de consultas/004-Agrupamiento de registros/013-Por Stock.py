@@ -11,7 +11,7 @@ conexion = mysql.connector.connect(
 cursor = conexion.cursor()  
 cursor.execute('''
 	SELECT
-	COUNT(categoria) AS numero,
+	COUNT(stock) AS numero,
 	color
 	FROM productos
 	GROUP BY color
