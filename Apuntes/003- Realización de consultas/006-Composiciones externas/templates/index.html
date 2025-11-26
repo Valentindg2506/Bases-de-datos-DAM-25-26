@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <title>Backoffice</title>
+    <meta charset="utf-8">
+    <style>
+      header{
+        width:100%;
+        background:orangered;
+        padding:20px;
+        color:white;
+        text-align: center;
+    }
+      section{
+        margin:auto;display:grid;gap:20px;
+        grid-template-columns:repeat(7,247px);
+      	border:1px solid orangered;padding:20px;
+        border-radius:20px;
+      }
+      article{
+        border:1px solid orangered;
+        padding:20px;
+        border-radius:20px;
+        align-content: center;
+    }
+    .imagen{
+        width:100px;
+        height:100px;
+        background:black;
+        border-radius:5px;
+        overflow:hidden;
+    }
+    </style>
+  </head>
+  <body>
+    <header><h1>Datos del alumnado</h1></header>
+    <main>
+      <section>
+        {% for linea in datos:%}
+        	<article>
+                <div class="imagen"></div>
+                <div class="texto">
+                    <p>Asignatura: {{linea['Nombre de la asignatura']}}</p>
+                    <p>Nombre: {{linea['Nombre del alumno']}}</p>
+                    <p>Apellidos: {{linea['Apellidos del alumno']}}</p>
+                </div>
+          </article>
+        {% endfor %}
+      </section>    
+    </main>
+  </body>
+</html>
