@@ -26,7 +26,7 @@
     .imagen{
         width:100px;
         height:100px;
-        background:black;
+        background:lightgrey;
         border-radius:5px;
         overflow:hidden;
     }
@@ -38,7 +38,9 @@
       <section>
         {% for linea in datos:%}
         	<article>
-                <div class="imagen"></div>
+                <div class="imagen">
+                    <img src="dv.jpg">
+                </div>
                 <div class="texto">
                     <p>Asignatura: {{linea['Nombre de la asignatura']}}</p>
                     <p>Nombre: {{linea['Nombre del alumno']}}</p>
