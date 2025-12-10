@@ -1,0 +1,69 @@
+/* ESTILOS GENERALES /////////////  */
+html,body{
+	width:100%;
+	height:100%;
+	margin:0px;
+	padding:0px;
+}
+body{
+	display:flex;
+}
+nav{
+	flex:1;
+	background:orangered;
+}
+main{
+	flex:4;
+	background:white;
+}
+/* ESTILOS DEL MENU /////////////  */
+nav{
+	display:flex;
+	padding:20px;
+	flex-direction:column;
+	gap:20px;
+}
+nav button{
+	background:white;
+	border:none;
+	color:black;
+	padding:10px;
+}
+/* ESTILOS DE LA TABLA /////////////  */
+main{
+	padding:20px;
+}
+table{
+	width:100%;
+	border-collapse: collapse;
+	font-family: Arial, sans-serif;
+	font-size: 14px;
+	box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+table th{
+	background: orangered;
+	color: white;
+	text-align: left;
+	padding: 10px;
+	letter-spacing: 0.5px;
+}
+
+table td{
+	padding: 10px;
+	border-bottom: 1px solid #f2f2f2;
+}
+
+table tr:hover{
+	background: #fff5f0; /* un ligero tono del naranja */
+	transition: 0.2s;
+}
+
+table tr:nth-child(even){
+	background: #fff8f3;
+}
+
+table{
+	border-radius: 8px;
+	overflow: hidden;
+}
