@@ -37,7 +37,7 @@ table{
 	width:100%;
 	border-collapse: collapse;
 	font-family: Arial, sans-serif;
-	font-size: 14px;
+	font-size: 18px;
 	box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
@@ -55,7 +55,7 @@ table td{
 }
 
 table tr:hover{
-	background: #fff5f0; /* un ligero tono del naranja */
+	background: #FFA500; /* un ligero tono del naranja */
 	transition: 0.2s;
 }
 
